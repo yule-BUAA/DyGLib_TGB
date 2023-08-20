@@ -9,7 +9,7 @@ from utils.utils import NeighborSampler
 class GraphMixer(nn.Module):
 
     def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler,
-                 time_feat_dim: int, num_tokens: int, num_layers: int = 2, token_dim_expansion_factor: float = 0.5,
+                 time_feat_dim: int, num_tokens: int, output_dim: int = 172, num_layers: int = 2, token_dim_expansion_factor: float = 0.5,
                  channel_dim_expansion_factor: float = 4.0, dropout: float = 0.1, device: str = 'cpu'):
         """
         TCL model.
@@ -18,6 +18,7 @@ class GraphMixer(nn.Module):
         :param neighbor_sampler: neighbor sampler
         :param time_feat_dim: int, dimension of time features (encodings)
         :param num_tokens: int, number of tokens
+        :param output_dim: int, dimension of the output embedding
         :param num_layers: int, number of transformer layers
         :param token_dim_expansion_factor: float, dimension expansion factor for tokens
         :param channel_dim_expansion_factor: float, dimension expansion factor for channels
@@ -33,6 +34,7 @@ class GraphMixer(nn.Module):
         self.node_feat_dim = self.node_raw_features.shape[1]
         self.edge_feat_dim = self.edge_raw_features.shape[1]
         self.time_feat_dim = time_feat_dim
+        self.output_dim = output_dim
         self.num_tokens = num_tokens
         self.num_layers = num_layers
         self.token_dim_expansion_factor = token_dim_expansion_factor
@@ -40,7 +42,7 @@ class GraphMixer(nn.Module):
         self.dropout = dropout
         self.device = device
 
-        self.num_channels = self.edge_feat_dim
+        self.num_channels = 172
         # in GraphMixer, the time encoding function is not trainable
         self.time_encoder = TimeEncoder(time_dim=time_feat_dim, parameter_requires_grad=False)
         self.projection_layer = nn.Linear(self.edge_feat_dim + time_feat_dim, self.num_channels)
@@ -52,7 +54,7 @@ class GraphMixer(nn.Module):
             for _ in range(self.num_layers)
         ])
 
-        self.output_layer = nn.Linear(in_features=self.num_channels + self.node_feat_dim, out_features=self.node_feat_dim, bias=True)
+        self.output_layer = nn.Linear(in_features=self.num_channels + self.node_feat_dim, out_features=self.output_dim, bias=True)
 
     def compute_src_dst_node_temporal_embeddings(self, src_node_ids: np.ndarray, dst_node_ids: np.ndarray,
                                                  node_interact_times: np.ndarray, num_neighbors: int = 20, time_gap: int = 2000):
@@ -65,10 +67,10 @@ class GraphMixer(nn.Module):
         :param time_gap: int, time gap for neighbors to compute node features
         :return:
         """
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         src_node_embeddings = self.compute_node_temporal_embeddings(node_ids=src_node_ids, node_interact_times=node_interact_times,
                                                                     num_neighbors=num_neighbors, time_gap=time_gap)
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         dst_node_embeddings = self.compute_node_temporal_embeddings(node_ids=dst_node_ids, node_interact_times=node_interact_times,
                                                                     num_neighbors=num_neighbors, time_gap=time_gap)
 
@@ -139,7 +141,7 @@ class GraphMixer(nn.Module):
         # Tensor, shape (batch_size, node_feat_dim), add features of nodes in node_ids
         output_node_features = nodes_time_gap_neighbor_node_agg_features + self.node_raw_features[torch.from_numpy(node_ids)]
 
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         node_embeddings = self.output_layer(torch.cat([combined_features, output_node_features], dim=1))
 
         return node_embeddings

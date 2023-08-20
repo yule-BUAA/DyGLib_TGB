@@ -11,7 +11,7 @@ from utils.utils import NeighborSampler
 class DyGFormer(nn.Module):
 
     def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler,
-                 time_feat_dim: int, channel_embedding_dim: int, patch_size: int = 1, num_layers: int = 2, num_heads: int = 2,
+                 time_feat_dim: int, channel_embedding_dim: int, output_dim: int = 172, patch_size: int = 1, num_layers: int = 2, num_heads: int = 2,
                  dropout: float = 0.1, max_input_sequence_length: int = 512, device: str = 'cpu'):
         """
         DyGFormer model.
@@ -20,6 +20,7 @@ class DyGFormer(nn.Module):
         :param neighbor_sampler: neighbor sampler
         :param time_feat_dim: int, dimension of time features (encodings)
         :param channel_embedding_dim: int, dimension of each channel embedding
+        :param output_dim: int, dimension of the output embedding
         :param patch_size: int, patch size
         :param num_layers: int, number of transformer layers
         :param num_heads: int, number of attention heads
@@ -37,6 +38,7 @@ class DyGFormer(nn.Module):
         self.edge_feat_dim = self.edge_raw_features.shape[1]
         self.time_feat_dim = time_feat_dim
         self.channel_embedding_dim = channel_embedding_dim
+        self.output_dim = output_dim
         self.patch_size = patch_size
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -63,7 +65,7 @@ class DyGFormer(nn.Module):
             for _ in range(self.num_layers)
         ])
 
-        self.output_layer = nn.Linear(in_features=self.num_channels * self.channel_embedding_dim, out_features=self.node_feat_dim, bias=True)
+        self.output_layer = nn.Linear(in_features=self.num_channels * self.channel_embedding_dim, out_features=self.output_dim, bias=True)
 
     def compute_src_dst_node_temporal_embeddings(self, src_node_ids: np.ndarray, dst_node_ids: np.ndarray, node_interact_times: np.ndarray):
         """
@@ -186,9 +188,9 @@ class DyGFormer(nn.Module):
         # dst_patches_data, Tensor, shape (batch_size, num_channels * channel_embedding_dim)
         dst_patches_data = torch.mean(dst_patches_data, dim=1)
 
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         src_node_embeddings = self.output_layer(src_patches_data)
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         dst_node_embeddings = self.output_layer(dst_patches_data)
 
         return src_node_embeddings, dst_node_embeddings
@@ -281,7 +283,7 @@ class DyGFormer(nn.Module):
         assert padded_nodes_neighbor_node_raw_features.shape[1] % patch_size == 0
         num_patches = padded_nodes_neighbor_node_raw_features.shape[1] // patch_size
 
-        # list of Tensors with shape (num_patches, ), each Tensor with shape (batch_size, patch_size, node_feat_dim)
+        # list of Tensors with shape (num_patches, ), each Tensor with shape (batch_size, patch_size, node_feat_dim or edge_feat_dim or time_feat_dim)
         patches_nodes_neighbor_node_raw_features, patches_nodes_edge_raw_features, \
         patches_nodes_neighbor_time_features, patches_nodes_neighbor_co_occurrence_features = [], [], [], []
 

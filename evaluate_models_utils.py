@@ -50,6 +50,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
         evaluate_metrics = []
         evaluate_idx_data_loader_tqdm = tqdm(evaluate_idx_data_loader, ncols=120)
         for batch_idx, evaluate_data_indices in enumerate(evaluate_idx_data_loader_tqdm):
+            evaluate_data_indices = evaluate_data_indices.numpy()
             batch_src_node_ids, batch_dst_node_ids, batch_node_interact_times, batch_edge_ids = \
                 evaluate_data.src_node_ids[evaluate_data_indices],  evaluate_data.dst_node_ids[evaluate_data_indices], \
                 evaluate_data.node_interact_times[evaluate_data_indices], evaluate_data.edge_ids[evaluate_data_indices]
@@ -75,7 +76,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
             # follow our previous implementation, we compute for positive and negative edges respectively
             if model_name in ['TGAT', 'CAWN', 'TCL']:
                 # get temporal embedding of source and destination nodes
-                # two Tensors, with shape (batch_size, node_feat_dim)
+                # two Tensors, with shape (batch_size, output_dim)
                 src_node_embeddings, dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                       dst_node_ids=batch_dst_node_ids,
@@ -83,7 +84,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                                                                       num_neighbors=num_neighbors)
 
                 # get temporal embedding of negative source and negative destination nodes
-                # two Tensors, with shape (batch_size * num_negative_samples_per_node, node_feat_dim)
+                # two Tensors, with shape (batch_size * num_negative_samples_per_node, output_dim)
                 neg_src_node_embeddings, neg_dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=repeated_batch_src_node_ids,
                                                                       dst_node_ids=batch_neg_dst_node_ids.flatten(),
@@ -93,7 +94,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                 # note that negative nodes do not change the memories while the positive nodes change the memories,
                 # we need to first compute the embeddings of negative nodes for memory-based models
                 # get temporal embedding of negative source and negative destination nodes
-                # two Tensors, with shape (batch_size * num_negative_samples_per_node, node_feat_dim)
+                # two Tensors, with shape (batch_size * num_negative_samples_per_node, output_dim)
                 neg_src_node_embeddings, neg_dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=repeated_batch_src_node_ids,
                                                                       dst_node_ids=batch_neg_dst_node_ids.flatten(),
@@ -103,7 +104,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                                                                       num_neighbors=num_neighbors)
 
                 # get temporal embedding of source and destination nodes
-                # two Tensors, with shape (batch_size, node_feat_dim)
+                # two Tensors, with shape (batch_size, output_dim)
                 src_node_embeddings, dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                       dst_node_ids=batch_dst_node_ids,
@@ -113,7 +114,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                                                                       num_neighbors=num_neighbors)
             elif model_name in ['GraphMixer']:
                 # get temporal embedding of source and destination nodes
-                # two Tensors, with shape (batch_size, node_feat_dim)
+                # two Tensors, with shape (batch_size, output_dim)
                 src_node_embeddings, dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                       dst_node_ids=batch_dst_node_ids,
@@ -122,7 +123,7 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                                                                       time_gap=time_gap)
 
                 # get temporal embedding of negative source and negative destination nodes
-                # two Tensors, with shape (batch_size * num_negative_samples_per_node, node_feat_dim)
+                # two Tensors, with shape (batch_size * num_negative_samples_per_node, output_dim)
                 neg_src_node_embeddings, neg_dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=repeated_batch_src_node_ids,
                                                                       dst_node_ids=batch_neg_dst_node_ids.flatten(),
@@ -131,14 +132,14 @@ def evaluate_model_link_prediction(model_name: str, model: nn.Module, neighbor_s
                                                                       time_gap=time_gap)
             elif model_name in ['DyGFormer']:
                 # get temporal embedding of source and destination nodes
-                # two Tensors, with shape (batch_size, node_feat_dim)
+                # two Tensors, with shape (batch_size, output_dim)
                 src_node_embeddings, dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                       dst_node_ids=batch_dst_node_ids,
                                                                       node_interact_times=batch_node_interact_times)
 
                 # get temporal embedding of negative source and negative destination nodes
-                # two Tensors, with shape (batch_size * num_negative_samples_per_node, node_feat_dim)
+                # two Tensors, with shape (batch_size * num_negative_samples_per_node, output_dim)
                 neg_src_node_embeddings, neg_dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=repeated_batch_src_node_ids,
                                                                       dst_node_ids=batch_neg_dst_node_ids.flatten(),
@@ -200,6 +201,7 @@ def evaluate_model_node_classification(model_name: str, model: nn.Module, neighb
         evaluate_labels_per_timeslot_dict = defaultdict(list)
         evaluate_idx_data_loader_tqdm = tqdm(evaluate_idx_data_loader, ncols=120)
         for batch_idx, evaluate_data_indices in enumerate(evaluate_idx_data_loader_tqdm):
+            evaluate_data_indices = evaluate_data_indices.numpy()
             batch_src_node_ids, batch_dst_node_ids, batch_node_interact_times, batch_edge_ids, batch_labels, batch_interact_types, batch_node_label_times = \
                 evaluate_data.src_node_ids[evaluate_data_indices],  evaluate_data.dst_node_ids[evaluate_data_indices], \
                 evaluate_data.node_interact_times[evaluate_data_indices], evaluate_data.edge_ids[evaluate_data_indices], \
@@ -222,7 +224,7 @@ def evaluate_model_node_classification(model_name: str, model: nn.Module, neighb
             # while other memory-free methods only need to compute on eval_stage
             if model_name in ['JODIE', 'DyRep', 'TGN']:
                 # get temporal embedding of source and destination nodes, note that the memories are updated during the forward process
-                # two Tensors, with shape (batch_size, node_feat_dim)
+                # two Tensors, with shape (batch_size, output_dim)
                 batch_src_node_embeddings, batch_dst_node_embeddings = \
                     model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                       dst_node_ids=batch_dst_node_ids,
@@ -234,7 +236,7 @@ def evaluate_model_node_classification(model_name: str, model: nn.Module, neighb
                 if len(eval_idx) > 0:
                     if model_name in ['TGAT', 'CAWN', 'TCL']:
                         # get temporal embedding of source and destination nodes
-                        # two Tensors, with shape (batch_size, node_feat_dim)
+                        # two Tensors, with shape (batch_size, output_dim)
                         batch_src_node_embeddings, batch_dst_node_embeddings = \
                             model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                               dst_node_ids=batch_dst_node_ids,
@@ -243,7 +245,7 @@ def evaluate_model_node_classification(model_name: str, model: nn.Module, neighb
 
                     elif model_name in ['GraphMixer']:
                         # get temporal embedding of source and destination nodes
-                        # two Tensors, with shape (batch_size, node_feat_dim)
+                        # two Tensors, with shape (batch_size, output_dim)
                         batch_src_node_embeddings, batch_dst_node_embeddings = \
                             model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                               dst_node_ids=batch_dst_node_ids,
@@ -252,7 +254,7 @@ def evaluate_model_node_classification(model_name: str, model: nn.Module, neighb
                                                                               time_gap=time_gap)
                     elif model_name in ['DyGFormer']:
                         # get temporal embedding of source and destination nodes
-                        # two Tensors, with shape (batch_size, node_feat_dim)
+                        # two Tensors, with shape (batch_size, output_dim)
                         batch_src_node_embeddings, batch_dst_node_embeddings = \
                             model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                               dst_node_ids=batch_dst_node_ids,
@@ -322,7 +324,10 @@ def evaluate_edge_bank_link_prediction(args: argparse.Namespace, train_data: Dat
         set_random_seed(seed=run)
 
         args.seed = run
-        args.save_result_name = f'eval_{args.model_name}_seed{args.seed}'
+        if args.edge_bank_memory_mode == "time_window_memory":
+            args.save_result_name = f'eval_{args.model_name}_{args.edge_bank_memory_mode}_{args.time_window_mode}_seed{args.seed}'
+        else:
+            args.save_result_name = f'eval_{args.model_name}_{args.edge_bank_memory_mode}_seed{args.seed}'
 
         # set up logger
         logging.basicConfig(level=logging.INFO)
@@ -358,6 +363,7 @@ def evaluate_edge_bank_link_prediction(args: argparse.Namespace, train_data: Dat
         test_idx_data_loader_tqdm = tqdm(test_idx_data_loader, ncols=120)
 
         for batch_idx, val_data_indices in enumerate(val_idx_data_loader_tqdm):
+            val_data_indices = val_data_indices.numpy()
             batch_src_node_ids, batch_dst_node_ids, batch_node_interact_times = \
                 val_data.src_node_ids[val_data_indices], val_data.dst_node_ids[val_data_indices], \
                 val_data.node_interact_times[val_data_indices]
@@ -410,6 +416,7 @@ def evaluate_edge_bank_link_prediction(args: argparse.Namespace, train_data: Dat
             val_idx_data_loader_tqdm.set_description(f'validate for the {batch_idx + 1}-th batch')
 
         for batch_idx, test_data_indices in enumerate(test_idx_data_loader_tqdm):
+            test_data_indices = test_data_indices.numpy()
             batch_src_node_ids, batch_dst_node_ids, batch_node_interact_times = \
                 test_data.src_node_ids[test_data_indices], test_data.dst_node_ids[test_data_indices], \
                 test_data.node_interact_times[test_data_indices]
@@ -594,6 +601,7 @@ def evaluate_parameter_free_node_classification(args: argparse.Namespace, train_
             evaluate_labels_per_timeslot_dict = defaultdict(list)
             evaluate_idx_data_loader_tqdm = tqdm(evaluate_idx_data_loader, ncols=120)
             for batch_idx, evaluate_data_indices in enumerate(evaluate_idx_data_loader_tqdm):
+                evaluate_data_indices = evaluate_data_indices.numpy()
                 batch_src_node_ids, batch_labels, batch_interact_types, batch_node_label_times = \
                     evaluate_data.src_node_ids[evaluate_data_indices], evaluate_data.labels[evaluate_data_indices], \
                     evaluate_data.interact_types[evaluate_data_indices], evaluate_data.node_label_times[evaluate_data_indices]

@@ -9,13 +9,14 @@ from utils.utils import NeighborSampler
 class TCL(nn.Module):
 
     def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler,
-                 time_feat_dim: int, num_layers: int = 2, num_heads: int = 2, num_depths: int = 20, dropout: float = 0.1, device: str = 'cpu'):
+                 time_feat_dim: int, output_dim: int = 172, num_layers: int = 2, num_heads: int = 2, num_depths: int = 20, dropout: float = 0.1, device: str = 'cpu'):
         """
         TCL model.
         :param node_raw_features: ndarray, shape (num_nodes + 1, node_feat_dim)
         :param edge_raw_features: ndarray, shape (num_edges + 1, edge_feat_dim)
         :param neighbor_sampler: neighbor sampler
         :param time_feat_dim: int, dimension of time features (encodings)
+        :param output_dim: int, dimension of the output embedding
         :param num_layers: int, number of transformer layers
         :param num_heads: int, number of attention heads
         :param num_depths: int, number of depths, identical to the number of sampled neighbors plus 1 (involving the target node)
@@ -31,6 +32,7 @@ class TCL(nn.Module):
         self.node_feat_dim = self.node_raw_features.shape[1]
         self.edge_feat_dim = self.edge_raw_features.shape[1]
         self.time_feat_dim = time_feat_dim
+        self.output_dim = output_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.num_depths = num_depths
@@ -38,20 +40,20 @@ class TCL(nn.Module):
         self.device = device
 
         self.time_encoder = TimeEncoder(time_dim=time_feat_dim)
-        self.depth_embedding = nn.Embedding(num_embeddings=num_depths, embedding_dim=self.node_feat_dim)
+        self.depth_embedding = nn.Embedding(num_embeddings=num_depths, embedding_dim=self.output_dim)
 
         self.projection_layer = nn.ModuleDict({
-            'node': nn.Linear(in_features=self.node_feat_dim, out_features=self.node_feat_dim, bias=True),
-            'edge': nn.Linear(in_features=self.edge_feat_dim, out_features=self.node_feat_dim, bias=True),
-            'time': nn.Linear(in_features=self.time_feat_dim, out_features=self.node_feat_dim, bias=True)
+            'node': nn.Linear(in_features=self.node_feat_dim, out_features=self.output_dim, bias=True),
+            'edge': nn.Linear(in_features=self.edge_feat_dim, out_features=self.output_dim, bias=True),
+            'time': nn.Linear(in_features=self.time_feat_dim, out_features=self.output_dim, bias=True)
         })
 
         self.transformers = nn.ModuleList([
-            TransformerEncoder(attention_dim=self.node_feat_dim, num_heads=self.num_heads, dropout=self.dropout)
+            TransformerEncoder(attention_dim=self.output_dim, num_heads=self.num_heads, dropout=self.dropout)
             for _ in range(self.num_layers)
         ])
 
-        self.output_layer = nn.Linear(in_features=self.node_feat_dim, out_features=self.node_feat_dim, bias=True)
+        self.output_layer = nn.Linear(in_features=self.output_dim, out_features=self.output_dim, bias=True)
 
     def compute_src_dst_node_temporal_embeddings(self, src_node_ids: np.ndarray, dst_node_ids: np.ndarray,
                                                  node_interact_times: np.ndarray, num_neighbors: int = 20):
@@ -99,7 +101,7 @@ class TCL(nn.Module):
         # src_nodes_neighbor_node_raw_features, Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
         # src_nodes_edge_raw_features, Tensor, shape (batch_size, num_neighbors + 1, edge_feat_dim)
         # src_nodes_neighbor_time_features, Tensor, shape (batch_size, num_neighbors + 1, time_feat_dim)
-        # src_nodes_neighbor_depth_features, Tensor, shape (num_neighbors + 1, node_feat_dim)
+        # src_nodes_neighbor_depth_features, Tensor, shape (num_neighbors + 1, output_dim)
         src_nodes_neighbor_node_raw_features, src_nodes_edge_raw_features, src_nodes_neighbor_time_features, src_nodes_neighbor_depth_features = \
             self.get_features(node_interact_times=node_interact_times, nodes_neighbor_ids=src_neighbor_node_ids,
                               nodes_edge_ids=src_neighbor_edge_ids, nodes_neighbor_times=src_neighbor_times, time_encoder=self.time_encoder)
@@ -107,48 +109,48 @@ class TCL(nn.Module):
         # dst_nodes_neighbor_node_raw_features, Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
         # dst_nodes_edge_raw_features, Tensor, shape (batch_size, num_neighbors + 1, edge_feat_dim)
         # dst_nodes_neighbor_time_features, Tensor, shape (batch_size, num_neighbors + 1, time_feat_dim)
-        # dst_nodes_neighbor_depth_features, Tensor, shape (num_neighbors + 1, node_feat_dim)
+        # dst_nodes_neighbor_depth_features, Tensor, shape (num_neighbors + 1, output_dim)
         dst_nodes_neighbor_node_raw_features, dst_nodes_edge_raw_features, dst_nodes_neighbor_time_features, dst_nodes_neighbor_depth_features = \
             self.get_features(node_interact_times=node_interact_times, nodes_neighbor_ids=dst_neighbor_node_ids,
                               nodes_edge_ids=dst_neighbor_edge_ids, nodes_neighbor_times=dst_neighbor_times, time_encoder=self.time_encoder)
 
-        # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+        # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
         src_nodes_neighbor_node_raw_features = self.projection_layer['node'](src_nodes_neighbor_node_raw_features)
         src_nodes_edge_raw_features = self.projection_layer['edge'](src_nodes_edge_raw_features)
         src_nodes_neighbor_time_features = self.projection_layer['time'](src_nodes_neighbor_time_features)
 
-        # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+        # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
         dst_nodes_neighbor_node_raw_features = self.projection_layer['node'](dst_nodes_neighbor_node_raw_features)
         dst_nodes_edge_raw_features = self.projection_layer['edge'](dst_nodes_edge_raw_features)
         dst_nodes_neighbor_time_features = self.projection_layer['time'](dst_nodes_neighbor_time_features)
 
-        # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+        # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
         src_node_features = src_nodes_neighbor_node_raw_features + src_nodes_edge_raw_features + src_nodes_neighbor_time_features + src_nodes_neighbor_depth_features
-        # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+        # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
         dst_node_features = dst_nodes_neighbor_node_raw_features + dst_nodes_edge_raw_features + dst_nodes_neighbor_time_features + dst_nodes_neighbor_depth_features
 
         for transformer in self.transformers:
             # self-attention block
-            # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+            # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
             src_node_features = transformer(inputs_query=src_node_features, inputs_key=src_node_features,
                                             inputs_value=src_node_features, neighbor_masks=src_neighbor_node_ids)
-            # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+            # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
             dst_node_features = transformer(inputs_query=dst_node_features, inputs_key=dst_node_features,
                                             inputs_value=dst_node_features, neighbor_masks=dst_neighbor_node_ids)
             # cross-attention block
-            # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+            # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
             src_node_embeddings = transformer(inputs_query=src_node_features, inputs_key=dst_node_features,
                                               inputs_value=dst_node_features, neighbor_masks=dst_neighbor_node_ids)
-            # Tensor, shape (batch_size, num_neighbors + 1, node_feat_dim)
+            # Tensor, shape (batch_size, num_neighbors + 1, output_dim)
             dst_node_embeddings = transformer(inputs_query=dst_node_features, inputs_key=src_node_features,
                                               inputs_value=src_node_features, neighbor_masks=src_neighbor_node_ids)
 
             src_node_features, dst_node_features = src_node_embeddings, dst_node_embeddings
 
         # retrieve the embedding of the corresponding target node, which is at the first position of the sequence
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         src_node_embeddings = self.output_layer(src_node_embeddings[:, 0, :])
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         dst_node_embeddings = self.output_layer(dst_node_embeddings[:, 0, :])
 
         return src_node_embeddings, dst_node_embeddings
@@ -171,7 +173,7 @@ class TCL(nn.Module):
         # Tensor, shape (batch_size, num_neighbors + 1, time_feat_dim)
         nodes_neighbor_time_features = time_encoder(timestamps=torch.from_numpy(node_interact_times[:, np.newaxis] - nodes_neighbor_times).float().to(self.device))
         assert nodes_neighbor_ids.shape[1] == self.depth_embedding.weight.shape[0]
-        # Tensor, shape (num_neighbors + 1, node_feat_dim)
+        # Tensor, shape (num_neighbors + 1, output_dim)
         nodes_neighbor_depth_features = self.depth_embedding(torch.tensor(range(nodes_neighbor_ids.shape[1])).to(self.device))
 
         return nodes_neighbor_node_raw_features, nodes_edge_raw_features, nodes_neighbor_time_features, nodes_neighbor_depth_features

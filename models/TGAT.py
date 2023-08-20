@@ -9,13 +9,14 @@ from utils.utils import NeighborSampler
 class TGAT(nn.Module):
 
     def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler,
-                 time_feat_dim: int, num_layers: int = 2, num_heads: int = 2, dropout: float = 0.1, device: str = 'cpu'):
+                 time_feat_dim: int, output_dim: int = 172, num_layers: int = 2, num_heads: int = 2, dropout: float = 0.1, device: str = 'cpu'):
         """
         TGAT model.
         :param node_raw_features: ndarray, shape (num_nodes + 1, node_feat_dim)
         :param edge_raw_features: ndarray, shape (num_edges + 1, edge_feat_dim)
         :param neighbor_sampler: neighbor sampler
         :param time_feat_dim: int, dimension of time features (encodings)
+        :param output_dim: int, dimension of the output embedding
         :param num_layers: int, number of temporal graph convolution layers
         :param num_heads: int, number of attention heads
         :param dropout: float, dropout rate
@@ -30,6 +31,7 @@ class TGAT(nn.Module):
         self.node_feat_dim = self.node_raw_features.shape[1]
         self.edge_feat_dim = self.edge_raw_features.shape[1]
         self.time_feat_dim = time_feat_dim
+        self.output_dim = output_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.dropout = dropout
@@ -40,10 +42,21 @@ class TGAT(nn.Module):
                                                                       edge_feat_dim=self.edge_feat_dim,
                                                                       time_feat_dim=self.time_feat_dim,
                                                                       num_heads=self.num_heads,
-                                                                      dropout=self.dropout) for _ in range(num_layers)])
+                                                                      dropout=self.dropout)])
         # follow the TGAT paper, use merge layer to combine the attention results and node original feature
-        self.merge_layers = nn.ModuleList([MergeLayer(input_dim1=self.node_feat_dim + self.time_feat_dim, input_dim2=self.node_feat_dim,
-                                                      hidden_dim=self.node_feat_dim, output_dim=self.node_feat_dim) for _ in range(num_layers)])
+        self.merge_layers = nn.ModuleList([MergeLayer(input_dim1=self.temporal_conv_layers[-1].query_dim, input_dim2=self.node_feat_dim,
+                                                      hidden_dim=self.output_dim, output_dim=self.output_dim)])
+
+        if num_layers > 1:
+            for _ in range(num_layers - 1):
+                self.temporal_conv_layers.append(MultiHeadAttention(node_feat_dim=self.output_dim,
+                                                                    edge_feat_dim=self.edge_feat_dim,
+                                                                    time_feat_dim=self.time_feat_dim,
+                                                                    num_heads=self.num_heads,
+                                                                    dropout=self.dropout))
+                # follow the TGAT paper, use merge layer to combine the attention results and node original feature
+                self.merge_layers.append(MergeLayer(input_dim1=self.temporal_conv_layers[-1].query_dim, input_dim2=self.node_feat_dim,
+                                                    hidden_dim=self.output_dim, output_dim=self.output_dim))
 
     def compute_src_dst_node_temporal_embeddings(self, src_node_ids: np.ndarray, dst_node_ids: np.ndarray,
                                                  node_interact_times: np.ndarray, num_neighbors: int = 20):
@@ -55,10 +68,10 @@ class TGAT(nn.Module):
         :param num_neighbors: int, number of neighbors to sample for each node
         :return:
         """
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         src_node_embeddings = self.compute_node_temporal_embeddings(node_ids=src_node_ids, node_interact_times=node_interact_times,
                                                                     current_layer_num=self.num_layers, num_neighbors=num_neighbors)
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         dst_node_embeddings = self.compute_node_temporal_embeddings(node_ids=dst_node_ids, node_interact_times=node_interact_times,
                                                                     current_layer_num=self.num_layers, num_neighbors=num_neighbors)
         return src_node_embeddings, dst_node_embeddings
@@ -87,7 +100,7 @@ class TGAT(nn.Module):
             return node_raw_features
         else:
             # get source node representations by aggregating embeddings from the previous (current_layer_num - 1)-th layer
-            # Tensor, shape (batch_size, node_feat_dim)
+            # Tensor, shape (batch_size, output_dim or node_feat_dim)
             node_conv_features = self.compute_node_temporal_embeddings(node_ids=node_ids,
                                                                        node_interact_times=node_interact_times,
                                                                        current_layer_num=current_layer_num - 1,
@@ -103,13 +116,13 @@ class TGAT(nn.Module):
                                                                num_neighbors=num_neighbors)
 
             # get neighbor features from previous layers
-            # shape (batch_size * num_neighbors, node_feat_dim)
+            # shape (batch_size * num_neighbors, output_dim or node_feat_dim)
             neighbor_node_conv_features = self.compute_node_temporal_embeddings(node_ids=neighbor_node_ids.flatten(),
                                                                                 node_interact_times=neighbor_times.flatten(),
                                                                                 current_layer_num=current_layer_num - 1,
                                                                                 num_neighbors=num_neighbors)
-            # shape (batch_size, num_neighbors, node_feat_dim)
-            neighbor_node_conv_features = neighbor_node_conv_features.reshape(node_ids.shape[0], num_neighbors, self.node_feat_dim)
+            # shape (batch_size, num_neighbors, output_dim or node_feat_dim)
+            neighbor_node_conv_features = neighbor_node_conv_features.reshape(node_ids.shape[0], num_neighbors, neighbor_node_conv_features.shape[-1])
 
             # compute time interval between current time and historical interaction time
             # adarray, shape (batch_size, num_neighbors)
@@ -121,7 +134,7 @@ class TGAT(nn.Module):
             # get edge features, shape (batch_size, num_neighbors, edge_feat_dim)
             neighbor_edge_features = self.edge_raw_features[torch.from_numpy(neighbor_edge_ids)]
             # temporal graph convolution
-            # Tensor, output shape (batch_size, node_feat_dim + time_feat_dim)
+            # Tensor, output shape (batch_size, query_dim)
             output, _ = self.temporal_conv_layers[current_layer_num - 1](node_features=node_conv_features,
                                                                          node_time_features=node_time_features,
                                                                          neighbor_node_features=neighbor_node_conv_features,
@@ -129,7 +142,7 @@ class TGAT(nn.Module):
                                                                          neighbor_node_edge_features=neighbor_edge_features,
                                                                          neighbor_masks=neighbor_node_ids)
 
-            # Tensor, output shape (batch_size, node_feat_dim)
+            # Tensor, output shape (batch_size, output_dim)
             # follow the TGAT paper, use merge layer to combine the attention results and node original feature
             output = self.merge_layers[current_layer_num - 1](input_1=output, input_2=node_raw_features)
 

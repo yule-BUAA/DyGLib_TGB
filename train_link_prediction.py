@@ -50,8 +50,13 @@ if __name__ == "__main__":
 
     # get data loaders
     train_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(train_data.src_node_ids))), batch_size=args.batch_size, shuffle=False)
-    val_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(val_data.src_node_ids))), batch_size=args.batch_size, shuffle=False)
-    test_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(test_data.src_node_ids))), batch_size=args.batch_size, shuffle=False)
+    # since the version 2 of tgbl-wiki has included all possible negative destinations for each positive edge, we set batch size to 1 to reduce the memory cost
+    if args.dataset_name == "tgbl-wiki":
+        val_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(val_data.src_node_ids))), batch_size=1, shuffle=False)
+        test_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(test_data.src_node_ids))), batch_size=1, shuffle=False)
+    else:
+        val_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(val_data.src_node_ids))), batch_size=args.batch_size, shuffle=False)
+        test_idx_data_loader = get_idx_data_loader(indices_list=list(range(len(test_data.src_node_ids))), batch_size=args.batch_size, shuffle=False)
 
     val_metric_all_runs, test_metric_all_runs = [], []
 
@@ -89,35 +94,36 @@ if __name__ == "__main__":
         # create model
         if args.model_name == 'TGAT':
             dynamic_backbone = TGAT(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                    time_feat_dim=args.time_feat_dim, num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout, device=args.device)
+                                    time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_layers=args.num_layers, num_heads=args.num_heads,
+                                    dropout=args.dropout, device=args.device)
         elif args.model_name in ['JODIE', 'DyRep', 'TGN']:
             # four floats that represent the mean and standard deviation of source and destination node time shifts in the training data, which is used for JODIE
             src_node_mean_time_shift, src_node_std_time_shift, dst_node_mean_time_shift_dst, dst_node_std_time_shift = \
                 compute_src_dst_node_time_shifts(train_data.src_node_ids, train_data.dst_node_ids, train_data.node_interact_times)
             dynamic_backbone = MemoryModel(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                           time_feat_dim=args.time_feat_dim, model_name=args.model_name, num_layers=args.num_layers, num_heads=args.num_heads,
+                                           time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, model_name=args.model_name, num_layers=args.num_layers, num_heads=args.num_heads,
                                            dropout=args.dropout, src_node_mean_time_shift=src_node_mean_time_shift, src_node_std_time_shift=src_node_std_time_shift,
                                            dst_node_mean_time_shift_dst=dst_node_mean_time_shift_dst, dst_node_std_time_shift=dst_node_std_time_shift, device=args.device)
         elif args.model_name == 'CAWN':
             dynamic_backbone = CAWN(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                    time_feat_dim=args.time_feat_dim, position_feat_dim=args.position_feat_dim, walk_length=args.walk_length,
+                                    time_feat_dim=args.time_feat_dim, position_feat_dim=args.position_feat_dim, output_dim=args.output_dim, walk_length=args.walk_length,
                                     num_walk_heads=args.num_walk_heads, dropout=args.dropout, device=args.device)
         elif args.model_name == 'TCL':
             dynamic_backbone = TCL(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                   time_feat_dim=args.time_feat_dim, num_layers=args.num_layers, num_heads=args.num_heads,
+                                   time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_layers=args.num_layers, num_heads=args.num_heads,
                                    num_depths=args.num_neighbors + 1, dropout=args.dropout, device=args.device)
         elif args.model_name == 'GraphMixer':
             dynamic_backbone = GraphMixer(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                          time_feat_dim=args.time_feat_dim, num_tokens=args.num_neighbors, num_layers=args.num_layers, dropout=args.dropout, device=args.device)
+                                          time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_tokens=args.num_neighbors, num_layers=args.num_layers,
+                                          dropout=args.dropout, device=args.device)
         elif args.model_name == 'DyGFormer':
             dynamic_backbone = DyGFormer(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=train_neighbor_sampler,
-                                         time_feat_dim=args.time_feat_dim, channel_embedding_dim=args.channel_embedding_dim, patch_size=args.patch_size,
-                                         num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout,
+                                         time_feat_dim=args.time_feat_dim, channel_embedding_dim=args.channel_embedding_dim, output_dim=args.output_dim,
+                                         patch_size=args.patch_size, num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout,
                                          max_input_sequence_length=args.max_input_sequence_length, device=args.device)
         else:
             raise ValueError(f"Wrong value for model_name {args.model_name}!")
-        link_predictor = MergeLayer(input_dim1=node_raw_features.shape[1], input_dim2=node_raw_features.shape[1],
-                                    hidden_dim=node_raw_features.shape[1], output_dim=1)
+        link_predictor = MergeLayer(input_dim1=args.output_dim, input_dim2=args.output_dim, hidden_dim=args.output_dim, output_dim=1)
         model = nn.Sequential(dynamic_backbone, link_predictor)
         logger.info(f'model -> {model}')
         logger.info(f'model name: {args.model_name}, #parameters: {get_parameter_sizes(model) * 4} B, '
@@ -151,6 +157,7 @@ if __name__ == "__main__":
             train_losses, train_metrics = [], []
             train_idx_data_loader_tqdm = tqdm(train_idx_data_loader, ncols=120)
             for batch_idx, train_data_indices in enumerate(train_idx_data_loader_tqdm):
+                train_data_indices = train_data_indices.numpy()
                 batch_src_node_ids, batch_dst_node_ids, batch_node_interact_times, batch_edge_ids = \
                     train_data.src_node_ids[train_data_indices], train_data.dst_node_ids[train_data_indices], \
                     train_data.node_interact_times[train_data_indices], train_data.edge_ids[train_data_indices]
@@ -162,7 +169,7 @@ if __name__ == "__main__":
                 # different from the source nodes, this is different from previous works that just replace destination nodes with negative destination nodes
                 if args.model_name in ['TGAT', 'CAWN', 'TCL']:
                     # get temporal embedding of source and destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_src_node_embeddings, batch_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                           dst_node_ids=batch_dst_node_ids,
@@ -170,7 +177,7 @@ if __name__ == "__main__":
                                                                           num_neighbors=args.num_neighbors)
 
                     # get temporal embedding of negative source and negative destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_neg_src_node_embeddings, batch_neg_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_neg_src_node_ids,
                                                                           dst_node_ids=batch_neg_dst_node_ids,
@@ -180,7 +187,7 @@ if __name__ == "__main__":
                     # note that negative nodes do not change the memories while the positive nodes change the memories,
                     # we need to first compute the embeddings of negative nodes for memory-based models
                     # get temporal embedding of negative source and negative destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_neg_src_node_embeddings, batch_neg_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_neg_src_node_ids,
                                                                           dst_node_ids=batch_neg_dst_node_ids,
@@ -190,7 +197,7 @@ if __name__ == "__main__":
                                                                           num_neighbors=args.num_neighbors)
 
                     # get temporal embedding of source and destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_src_node_embeddings, batch_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                           dst_node_ids=batch_dst_node_ids,
@@ -200,7 +207,7 @@ if __name__ == "__main__":
                                                                           num_neighbors=args.num_neighbors)
                 elif args.model_name in ['GraphMixer']:
                     # get temporal embedding of source and destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_src_node_embeddings, batch_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                           dst_node_ids=batch_dst_node_ids,
@@ -209,7 +216,7 @@ if __name__ == "__main__":
                                                                           time_gap=args.time_gap)
 
                     # get temporal embedding of negative source and negative destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_neg_src_node_embeddings, batch_neg_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_neg_src_node_ids,
                                                                           dst_node_ids=batch_neg_dst_node_ids,
@@ -218,14 +225,14 @@ if __name__ == "__main__":
                                                                           time_gap=args.time_gap)
                 elif args.model_name in ['DyGFormer']:
                     # get temporal embedding of source and destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_src_node_embeddings, batch_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_src_node_ids,
                                                                           dst_node_ids=batch_dst_node_ids,
                                                                           node_interact_times=batch_node_interact_times)
 
                     # get temporal embedding of negative source and negative destination nodes
-                    # two Tensors, with shape (batch_size, node_feat_dim)
+                    # two Tensors, with shape (batch_size, output_dim)
                     batch_neg_src_node_embeddings, batch_neg_dst_node_embeddings = \
                         model[0].compute_src_dst_node_temporal_embeddings(src_node_ids=batch_neg_src_node_ids,
                                                                           dst_node_ids=batch_neg_dst_node_ids,

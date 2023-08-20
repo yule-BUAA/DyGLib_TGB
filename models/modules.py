@@ -99,8 +99,7 @@ class MLPClassifier(nn.Module):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, node_feat_dim: int, edge_feat_dim: int, time_feat_dim: int,
-                 num_heads: int = 2, dropout: float = 0.1):
+    def __init__(self, node_feat_dim: int, edge_feat_dim: int, time_feat_dim: int, num_heads: int = 2, dropout: float = 0.1):
         """
         Multi-head Attention module.
         :param node_feat_dim: int, dimension of node features
@@ -118,6 +117,13 @@ class MultiHeadAttention(nn.Module):
 
         self.query_dim = node_feat_dim + time_feat_dim
         self.key_dim = node_feat_dim + edge_feat_dim + time_feat_dim
+
+        if self.query_dim % num_heads != 0:
+            print("warning: the query_dim cannot be divided by num_heads, perform padding to support the computation")
+            self.pad_dim = num_heads - self.query_dim % num_heads
+            self.query_dim += self.pad_dim
+        else:
+            self.pad_dim = 0
 
         assert self.query_dim % num_heads == 0, "The sum of node_feat_dim and time_feat_dim should be divided by num_heads!"
 
@@ -150,7 +156,11 @@ class MultiHeadAttention(nn.Module):
         # Tensor, shape (batch_size, 1, node_feat_dim)
         node_features = torch.unsqueeze(node_features, dim=1)
 
-        # Tensor, shape (batch_size, 1, node_feat_dim + time_feat_dim)
+        # we need to pad for the inputs
+        if self.pad_dim != 0:
+            node_features = torch.cat([node_features, torch.zeros(node_features.shape[0], node_features.shape[1], self.pad_dim).to(node_features.device)], dim=2)
+
+        # Tensor, shape (batch_size, 1, query_dim)
         query = residual = torch.cat([node_features, node_time_features], dim=2)
         # shape (batch_size, 1, num_heads, self.head_dim)
         query = self.query_projection(query).reshape(query.shape[0], query.shape[1], self.num_heads, self.head_dim)
@@ -158,6 +168,7 @@ class MultiHeadAttention(nn.Module):
         # Tensor, shape (batch_size, num_neighbors, node_feat_dim + edge_feat_dim + time_feat_dim)
         key = value = torch.cat([neighbor_node_features, neighbor_node_edge_features, neighbor_node_time_features], dim=2)
         # Tensor, shape (batch_size, num_neighbors, num_heads, self.head_dim)
+        self.key_projection(key)
         key = self.key_projection(key).reshape(key.shape[0], key.shape[1], self.num_heads, self.head_dim)
         # Tensor, shape (batch_size, num_neighbors, num_heads, self.head_dim)
         value = self.value_projection(value).reshape(value.shape[0], value.shape[1], self.num_heads, self.head_dim)
@@ -190,16 +201,16 @@ class MultiHeadAttention(nn.Module):
         # Tensor, shape (batch_size, num_heads, 1, self.head_dim)
         attention_output = torch.einsum('bhln,bhnd->bhld', attention_scores, value)
 
-        # Tensor, shape (batch_size, 1, num_heads * self.head_dim), where num_heads * self.head_dim is equal to node_feat_dim + time_feat_dim
+        # Tensor, shape (batch_size, 1, num_heads * self.head_dim), where num_heads * self.head_dim is equal to query_dim
         attention_output = attention_output.permute(0, 2, 1, 3).flatten(start_dim=2)
 
-        # Tensor, shape (batch_size, 1, node_feat_dim + time_feat_dim)
+        # Tensor, shape (batch_size, 1, query_dim)
         output = self.dropout(self.residual_fc(attention_output))
 
-        # Tensor, shape (batch_size, 1, node_feat_dim + time_feat_dim)
+        # Tensor, shape (batch_size, 1, query_dim)
         output = self.layer_norm(output + residual)
 
-        # Tensor, shape (batch_size, node_feat_dim + time_feat_dim)
+        # Tensor, shape (batch_size, query_dim)
         output = output.squeeze(dim=1)
         # Tensor, shape (batch_size, num_heads, num_neighbors)
         attention_scores = attention_scores.squeeze(dim=2)

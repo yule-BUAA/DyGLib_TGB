@@ -147,27 +147,21 @@ def get_link_prediction_tgb_data(dataset_name: str):
     dst_node_ids = dst_node_ids + 1
     edge_ids = edge_ids + 1
 
-    NODE_FEAT_DIM = EDGE_FEAT_DIM = 172
+    MAX_FEAT_DIM = 172
     if 'node_feat' not in data.keys():
-        node_raw_features = np.zeros((num_nodes + 1, NODE_FEAT_DIM))
+        node_raw_features = np.zeros((num_nodes + 1, 1))
     else:
         node_raw_features = data['node_feat'].astype(np.float64)
-        node_raw_features = np.vstack([np.zeros(node_raw_features.shape[1])[np.newaxis, :], node_raw_features])
+        # deal with node features whose shape has only one dimension
+        if len(node_raw_features.shape) == 1:
+            node_raw_features = node_raw_features[:, np.newaxis]
 
+    # add feature of padded node and padded edge
+    node_raw_features = np.vstack([np.zeros(node_raw_features.shape[1])[np.newaxis, :], node_raw_features])
     edge_raw_features = np.vstack([np.zeros(edge_raw_features.shape[1])[np.newaxis, :], edge_raw_features])
 
-    assert NODE_FEAT_DIM >= node_raw_features.shape[1], f'Node feature dimension in dataset {dataset_name} is bigger than {NODE_FEAT_DIM}!'
-    assert EDGE_FEAT_DIM >= edge_raw_features.shape[1], f'Edge feature dimension in dataset {dataset_name} is bigger than {EDGE_FEAT_DIM}!'
-
-    # padding the features of edges and nodes to the same dimension (172 for all the datasets)
-    if node_raw_features.shape[1] < NODE_FEAT_DIM:
-        node_zero_padding = np.zeros((node_raw_features.shape[0], NODE_FEAT_DIM - node_raw_features.shape[1]))
-        node_raw_features = np.concatenate([node_raw_features, node_zero_padding], axis=1)
-    if edge_raw_features.shape[1] < EDGE_FEAT_DIM:
-        edge_zero_padding = np.zeros((edge_raw_features.shape[0], EDGE_FEAT_DIM - edge_raw_features.shape[1]))
-        edge_raw_features = np.concatenate([edge_raw_features, edge_zero_padding], axis=1)
-
-    assert NODE_FEAT_DIM == node_raw_features.shape[1] and EDGE_FEAT_DIM == edge_raw_features.shape[1], 'Unaligned feature dimensions after feature padding!'
+    assert MAX_FEAT_DIM >= node_raw_features.shape[1], f'Node feature dimension in dataset {dataset_name} is bigger than {MAX_FEAT_DIM}!'
+    assert MAX_FEAT_DIM >= edge_raw_features.shape[1], f'Edge feature dimension in dataset {dataset_name} is bigger than {MAX_FEAT_DIM}!'
 
     full_data = Data(src_node_ids=src_node_ids, dst_node_ids=dst_node_ids, node_interact_times=node_interact_times, edge_ids=edge_ids, labels=labels)
     train_data = Data(src_node_ids=src_node_ids[train_mask], dst_node_ids=dst_node_ids[train_mask],
@@ -292,27 +286,21 @@ def get_node_classification_tgb_data(dataset_name: str):
     dst_node_ids = dst_node_ids + 1
     edge_ids = edge_ids + 1
 
-    NODE_FEAT_DIM = EDGE_FEAT_DIM = 172
+    MAX_FEAT_DIM = 172
     if 'node_feat' not in data.keys():
-        node_raw_features = np.zeros((num_nodes + 1, NODE_FEAT_DIM))
+        node_raw_features = np.zeros((num_nodes + 1, 1))
     else:
         node_raw_features = data['node_feat'].astype(np.float64)
-        node_raw_features = np.vstack([np.zeros(node_raw_features.shape[1])[np.newaxis, :], node_raw_features])
+        # deal with node features whose shape has only one dimension
+        if len(node_raw_features.shape) == 1:
+            node_raw_features = node_raw_features[:, np.newaxis]
 
+    # add feature of padded node and padded edge
+    node_raw_features = np.vstack([np.zeros(node_raw_features.shape[1])[np.newaxis, :], node_raw_features])
     edge_raw_features = np.vstack([np.zeros(edge_raw_features.shape[1])[np.newaxis, :], edge_raw_features])
 
-    assert NODE_FEAT_DIM >= node_raw_features.shape[1], f'Node feature dimension in dataset {dataset_name} is bigger than {NODE_FEAT_DIM}!'
-    assert EDGE_FEAT_DIM >= edge_raw_features.shape[1], f'Edge feature dimension in dataset {dataset_name} is bigger than {EDGE_FEAT_DIM}!'
-
-    # padding the features of edges and nodes to the same dimension (172 for all the datasets)
-    if node_raw_features.shape[1] < NODE_FEAT_DIM:
-        node_zero_padding = np.zeros((node_raw_features.shape[0], NODE_FEAT_DIM - node_raw_features.shape[1]))
-        node_raw_features = np.concatenate([node_raw_features, node_zero_padding], axis=1)
-    if edge_raw_features.shape[1] < EDGE_FEAT_DIM:
-        edge_zero_padding = np.zeros((edge_raw_features.shape[0], EDGE_FEAT_DIM - edge_raw_features.shape[1]))
-        edge_raw_features = np.concatenate([edge_raw_features, edge_zero_padding], axis=1)
-
-    assert NODE_FEAT_DIM == node_raw_features.shape[1] and EDGE_FEAT_DIM == edge_raw_features.shape[1], 'Unaligned feature dimensions after feature padding!'
+    assert MAX_FEAT_DIM >= node_raw_features.shape[1], f'Node feature dimension in dataset {dataset_name} is bigger than {MAX_FEAT_DIM}!'
+    assert MAX_FEAT_DIM >= edge_raw_features.shape[1], f'Edge feature dimension in dataset {dataset_name} is bigger than {MAX_FEAT_DIM}!'
 
     full_data = Data(src_node_ids=src_node_ids, dst_node_ids=dst_node_ids, node_interact_times=node_interact_times, edge_ids=edge_ids,
                      labels=labels, interact_types=interact_types, node_label_times=node_label_times)

@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
             args.seed = run
             args.load_model_name = f'{args.model_name}_seed{args.seed}'
-            args.save_result_name = f'eval_{args.model_name}_seed{args.seed}'
+            args.save_result_name = f'eval_{args.load_model_name}'
 
             # set up logger
             logging.basicConfig(level=logging.INFO)
@@ -86,34 +86,36 @@ if __name__ == "__main__":
             # create model
             if args.model_name == 'TGAT':
                 dynamic_backbone = TGAT(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                        time_feat_dim=args.time_feat_dim, num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout, device=args.device)
+                                        time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_layers=args.num_layers, num_heads=args.num_heads,
+                                        dropout=args.dropout, device=args.device)
             elif args.model_name in ['JODIE', 'DyRep', 'TGN']:
                 # four floats that represent the mean and standard deviation of source and destination node time shifts in the training data, which is used for JODIE
                 src_node_mean_time_shift, src_node_std_time_shift, dst_node_mean_time_shift_dst, dst_node_std_time_shift = \
                     compute_src_dst_node_time_shifts(train_data.src_node_ids, train_data.dst_node_ids, train_data.node_interact_times)
                 dynamic_backbone = MemoryModel(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                               time_feat_dim=args.time_feat_dim, model_name=args.model_name, num_layers=args.num_layers, num_heads=args.num_heads,
+                                               time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, model_name=args.model_name, num_layers=args.num_layers, num_heads=args.num_heads,
                                                dropout=args.dropout, src_node_mean_time_shift=src_node_mean_time_shift, src_node_std_time_shift=src_node_std_time_shift,
                                                dst_node_mean_time_shift_dst=dst_node_mean_time_shift_dst, dst_node_std_time_shift=dst_node_std_time_shift, device=args.device)
             elif args.model_name == 'CAWN':
                 dynamic_backbone = CAWN(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                        time_feat_dim=args.time_feat_dim, position_feat_dim=args.position_feat_dim, walk_length=args.walk_length,
+                                        time_feat_dim=args.time_feat_dim, position_feat_dim=args.position_feat_dim, output_dim=args.output_dim, walk_length=args.walk_length,
                                         num_walk_heads=args.num_walk_heads, dropout=args.dropout, device=args.device)
             elif args.model_name == 'TCL':
                 dynamic_backbone = TCL(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                       time_feat_dim=args.time_feat_dim, num_layers=args.num_layers, num_heads=args.num_heads,
+                                       time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_layers=args.num_layers, num_heads=args.num_heads,
                                        num_depths=args.num_neighbors + 1, dropout=args.dropout, device=args.device)
             elif args.model_name == 'GraphMixer':
                 dynamic_backbone = GraphMixer(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                              time_feat_dim=args.time_feat_dim, num_tokens=args.num_neighbors, num_layers=args.num_layers, dropout=args.dropout, device=args.device)
+                                              time_feat_dim=args.time_feat_dim, output_dim=args.output_dim, num_tokens=args.num_neighbors, num_layers=args.num_layers,
+                                              dropout=args.dropout, device=args.device)
             elif args.model_name == 'DyGFormer':
                 dynamic_backbone = DyGFormer(node_raw_features=node_raw_features, edge_raw_features=edge_raw_features, neighbor_sampler=full_neighbor_sampler,
-                                             time_feat_dim=args.time_feat_dim, channel_embedding_dim=args.channel_embedding_dim, patch_size=args.patch_size,
-                                             num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout,
+                                             time_feat_dim=args.time_feat_dim, channel_embedding_dim=args.channel_embedding_dim, output_dim=args.output_dim,
+                                             patch_size=args.patch_size, num_layers=args.num_layers, num_heads=args.num_heads, dropout=args.dropout,
                                              max_input_sequence_length=args.max_input_sequence_length, device=args.device)
             else:
                 raise ValueError(f"Wrong value for model_name {args.model_name}!")
-            node_classifier = MLPClassifier(input_dim=node_raw_features.shape[1], output_dim=num_classes, dropout=args.dropout)
+            node_classifier = MLPClassifier(input_dim=args.output_dim, output_dim=num_classes, dropout=args.dropout)
             model = nn.Sequential(dynamic_backbone, node_classifier)
             logger.info(f'model -> {model}')
             logger.info(f'model name: {args.model_name}, #parameters: {get_parameter_sizes(model) * 4} B, '

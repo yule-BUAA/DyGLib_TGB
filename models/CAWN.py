@@ -9,8 +9,8 @@ from utils.utils import NeighborSampler
 
 class CAWN(nn.Module):
 
-    def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler,
-                 time_feat_dim: int, position_feat_dim: int, walk_length: int = 2, num_walk_heads: int = 8, dropout: float = 0.1, device: str = 'cpu'):
+    def __init__(self, node_raw_features: np.ndarray, edge_raw_features: np.ndarray, neighbor_sampler: NeighborSampler, time_feat_dim: int,
+                 position_feat_dim: int, output_dim: int = 172, walk_length: int = 2, num_walk_heads: int = 8, dropout: float = 0.1, device: str = 'cpu'):
         """
         Causal anonymous walks network.
         :param node_raw_features: ndarray, shape (num_nodes + 1, node_feat_dim)
@@ -18,6 +18,7 @@ class CAWN(nn.Module):
         :param neighbor_sampler: NeighborSampler, neighbor sampler
         :param time_feat_dim: int, dimension of time features (encodings)
         :param position_feat_dim: int, dimension of position features (encodings)
+        :param output_dim: int, dimension of the output embedding
         :param walk_length: int, length of each random walk
         :param num_walk_heads: int, number of attention heads to aggregate random walks
         :param dropout: float, dropout rate
@@ -33,6 +34,7 @@ class CAWN(nn.Module):
         self.edge_feat_dim = self.edge_raw_features.shape[1]
         self.time_feat_dim = time_feat_dim
         self.position_feat_dim = position_feat_dim
+        self.output_dim = output_dim
         self.walk_length = walk_length
         self.num_walk_heads = num_walk_heads
         self.dropout = dropout
@@ -43,7 +45,7 @@ class CAWN(nn.Module):
         self.position_encoder = PositionEncoder(position_feat_dim=self.position_feat_dim, walk_length=self.walk_length, device=device)
 
         self.walk_encoder = WalkEncoder(input_dim=self.node_feat_dim + self.edge_feat_dim + self.time_feat_dim + self.position_feat_dim,
-                                        position_feat_dim=self.position_feat_dim, output_dim=self.node_feat_dim, num_walk_heads=self.num_walk_heads, dropout=dropout)
+                                        position_feat_dim=self.position_feat_dim, output_dim=self.output_dim, num_walk_heads=self.num_walk_heads, dropout=dropout)
 
     def compute_src_dst_node_temporal_embeddings(self, src_node_ids: np.ndarray, dst_node_ids: np.ndarray,
                                                  node_interact_times: np.ndarray, num_neighbors: int = 20):
@@ -70,10 +72,10 @@ class CAWN(nn.Module):
                                                       src_node_multi_hop_graphs=src_node_multi_hop_graphs,
                                                       dst_node_multi_hop_graphs=dst_node_multi_hop_graphs)
 
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         src_node_embeddings = self.compute_node_temporal_embeddings(node_ids=src_node_ids, node_interact_times=node_interact_times,
                                                                     node_multi_hop_graphs=src_node_multi_hop_graphs, num_neighbors=num_neighbors)
-        # Tensor, shape (batch_size, node_feat_dim)
+        # Tensor, shape (batch_size, output_dim)
         dst_node_embeddings = self.compute_node_temporal_embeddings(node_ids=dst_node_ids, node_interact_times=node_interact_times,
                                                                     node_multi_hop_graphs=dst_node_multi_hop_graphs, num_neighbors=num_neighbors)
 
